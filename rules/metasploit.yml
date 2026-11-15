@@ -1,0 +1,7 @@
+# sigma-style demo rule: enable with `bpfsight run --rules-dir rules`
+id: metasploit-default-port
+title: connect to Metasploit default handler port
+level: high
+selection:
+  kind: connect
+  dport: [4444]

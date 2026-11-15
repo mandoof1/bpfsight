@@ -1,0 +1,15 @@
+name: CI
+on: [push, pull_request]
+jobs:
+  test:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - run: sudo apt-get update && sudo apt-get install -y clang libbpf-dev
+      - uses: dtolnay/rust-toolchain@stable
+      - run: make -C bpf
+      - run: cargo build --release
+      - name: unit tests
+        run: cargo test --lib
+      - name: live eBPF tests (root + BTF on GH runner)
+        run: sudo env "PATH=$PATH" cargo test -- --test-threads=1

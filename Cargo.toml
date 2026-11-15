@@ -1,0 +1,18 @@
+[package]
+name = "bpfsight"
+version = "1.0.0"
+edition = "2021"
+description = "eBPF host sensor: exec/fork/connect/accept/open/cred/module -> JSONL + SQLite with built-in detections"
+license = "MIT"
+
+[dependencies]
+aya = "0.16"
+clap = { version = "4", features = ["derive"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+serde_yaml = "0.9"
+rusqlite = { version = "0.37", features = ["bundled"] }
+libc = "0.2"
+
+[profile.release]
+debug = true

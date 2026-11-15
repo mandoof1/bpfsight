@@ -1,0 +1,10 @@
+target/
+probe/target/
+probe/probe.bpf.o
+probe/vmlinux.h
+bpf/vmlinux.h
+*.sqlite
+*.sqlite-shm
+*.sqlite-wal
+*.jsonl
+assets/*.png.png
