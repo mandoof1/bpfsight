@@ -9,7 +9,7 @@ built-in detection engine, live. One binary, no daemons, no external services.
 - 14 built-in detections + sigma-style YAML rules + IOC list matching
 - JSONL + SQLite sinks, drop accounting (ring-buffer losses never go unnoticed)
 - `stats` subcommand for capture accounting after the fact
-- overhead: 0.13% of one core idle, 0.20% under a 6-way compile burst, ~11.7 MB RSS (see [Performance](#performance))
+- overhead: 0.13% of one core idle, 0.27% under a 6-way compile burst, ~11.7 MB RSS (see [Performance](#performance))
 
 Built and verified on `7.3.3-1-cachyos` (CO-RE against kernel BTF only —
 `vmlinux.h` is generated from the running kernel by `make -C bpf`, no kernel
@@ -29,8 +29,8 @@ on the wire, bpfsight sees what the kernel actually did.
 |---|---|---|
 | `exec` + argv | `fentry/__x64_sys_execve{,at}` stash + `raw_tracepoint/sched_process_exec` | tracepoint confirms real execs only; the fentry stash supplies argv (up to 3 slots, 128 B each) |
 | `fork` | `raw_tracepoint/sched_process_fork` | pid/comm read via CO-RE from the child task |
-| `connect` | `fexit/__sys_connect` | sockaddr still readable at return |
-| `accept` | `fexit/__sys_accept4_file` | peer sockaddr after the kernel wrote it |
+| `connect` | `tracepoint/syscalls/sys_enter_connect` + `sys_exit_connect` | sockaddr pointer stashed at enter, event emitted at exit; fexit on `__sys_connect` does not port (inlined on some configs) |
+| `accept` | `sys_enter/exit_accept{,4}` tracepoints | the kernel writes the peer sockaddr during the call; it is read from the caller's (still-live) stack buffer at sys_exit |
 | `open` | `fentry/fexit path_openat` | this kernel LTO-inlines the openat syscall stubs — trampolines on `__x64_sys_openat`/`do_sys_openat2` attach but never run (verified with `bpftool` run counters); `path_openat` is the one function every open variant calls, and its `op` argument carries the full raw open flags (`O_CREAT/O_TRUNC/O_APPEND` are already stripped from `file->f_flags` by fexit time) |
 | `cred` | `fentry/commit_creds` | old vs new uid/euid |
 | `module` | `raw_tracepoint/module_load` | module name via CO-RE |
@@ -120,9 +120,9 @@ compile a 3000-function translation unit:
 
 ```
 == idle phase: 15s ==
-idle: cpu=0.13% rss=11792kB
+idle: cpu=0.13% rss=11780kB
 == compile burst: 6x cc -O2 over 3000-function TU, 15s ==
-burst: cpu=0.20% rss=11688kB
+burst: cpu=0.27% rss=11620kB
 ```
 
 cpu = % of **one** core (utime+stime delta over wall time); rss = VmRSS of the
@@ -148,10 +148,14 @@ kernel for belt-and-braces CO-RE.
 - **BTF required.** Without `/sys/kernel/btf/vmlinux` bpfsight exits with a
   clear `CONFIG_DEBUG_INFO_BTF` message instead of loading (tested; set
   `BPFSIGHT_BTF_PATH` to an invalid path to see it).
-- **Hook names are kernel-version shaped.** `__sys_connect`, `commit_creds`,
-  `path_openat` etc. are names as of 6.11–7.3. The `probe/` program in this
-  repo is the pairing smoke test: run it first on an unusual kernel to see
-  which hooks attach before trusting a capture.
+- **Hook names are kernel-shape dependent.** `path_openat`, `commit_creds`,
+  the `__x64_sys_execve` wrappers and the `syscalls` tracepoint class are
+  stable across 6.11–7.3 and on Ubuntu's kernels; static syscall helpers are
+  not (fexit on `__sys_accept4_file` loads here but fails with "unknown BTF
+  type" on Ubuntu's linux-azure kernel — which is why connect/accept ride the
+  uapi-stable syscall tracepoints). The `probe/` program in this repo is the
+  pairing smoke test: run it first on an unusual kernel to see which hooks
+  attach before trusting a capture.
 - `exec` argv keeps the first 3 arguments, 128 bytes each.
 - One event slot per thread: an exec with argv longer than 3 slots is truncated,
   not split.

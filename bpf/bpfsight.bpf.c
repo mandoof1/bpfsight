@@ -190,53 +190,116 @@ int handle_fork(struct bpf_raw_tracepoint_args *ctx) {
     return 0;
 }
 
-/* ---- connect (fexit re-declares entry args + return) ---- */
-SEC("fexit/__sys_connect")
-int BPF_PROG(connect_exit, int fd, const struct sockaddr __user *uservaddr, int addrlen,
-             int ret) {
-    struct ev *e = new_event(KIND_CONNECT);
+/* ---- connect / accept via syscall tracepoints ----
+ * fexit on __sys_connect/__sys_accept4_file does NOT port: those are static
+ * or inlined depending on config (absent from BTF on Ubuntu's linux-azure
+ * kernel). The syscalls tracepoint class is uapi-stable; its struct
+ * trace_event_raw_sys_enter{,_exit} is in BTF on any BTF-enabled kernel.
+ * The user sockaddr pointer stays valid in the caller at sys_exit time (it
+ * lives on the caller's stack), so accept's peer is read there. */
+struct sstash {
+    __u64 sa;  /* connect: uservaddr, accept: upeer_sockaddr */
+    __u64 flg; /* accept4 flags */
+};
+
+struct {
+    __uint(type, BPF_MAP_TYPE_HASH);
+    __uint(max_entries, 8192);
+    __type(key, __u64);
+    __type(value, struct sstash);
+} sysstash SEC(".maps");
+
+static __always_inline void emit_sock(struct sstash s, int is_accept, long ret) {
+    struct ev *e = new_event(is_accept ? KIND_ACCEPT : KIND_CONNECT);
     if (!e)
-        return 0;
+        return;
     e->ret = ret;
-    e->dfd = fd;
-    if (uservaddr) {
+    if (is_accept)
+        e->flags = (__u32)s.flg;
+    struct sockaddr __user *sa = (void *)s.sa;
+    if (sa) {
         __u16 family = 0;
-        bpf_probe_read_user(&family, sizeof(family), uservaddr);
+        bpf_probe_read_user(&family, sizeof(family), sa);
         e->family = family;
         if (family == AF_INET) {
             struct sockaddr_in in = {};
-            if (bpf_probe_read_user(&in, sizeof(in), uservaddr) == 0) {
+            if (bpf_probe_read_user(&in, sizeof(in), sa) == 0) {
                 e->dport = in.sin_port;
                 zcopy(e->dip, &in.sin_addr.s_addr, 4);
             }
         }
     }
     bpf_ringbuf_submit(e, 0);
+}
+
+static __always_inline void stash_sock(const struct trace_event_raw_sys_enter *ctx,
+                                       int accept4) {
+    __u64 tid = bpf_get_current_pid_tgid();
+    struct sstash v = {
+        .sa = BPF_CORE_READ(ctx, args[1]),
+        .flg = accept4 ? BPF_CORE_READ(ctx, args[3]) : 0,
+    };
+    bpf_map_update_elem(&sysstash, &tid, &v, BPF_ANY);
+}
+
+SEC("tracepoint/syscalls/sys_enter_connect")
+int tp_enter_connect(const struct trace_event_raw_sys_enter *ctx) {
+    stash_sock(ctx, 0);
     return 0;
 }
 
-/* ---- accept ---- */
-SEC("fexit/__sys_accept4_file")
-int BPF_PROG(accept_exit, struct file *file, struct sockaddr __user *upeer_sockaddr,
-             int __user *upeer_addrlen, int flags, int ret) {
-    struct ev *e = new_event(KIND_ACCEPT);
-    if (!e)
+SEC("tracepoint/syscalls/sys_exit_connect")
+int tp_exit_connect(const struct trace_event_raw_sys_exit *ctx) {
+    long ret = BPF_CORE_READ(ctx, ret);
+    __u64 tid = bpf_get_current_pid_tgid();
+    struct sstash *v = bpf_map_lookup_elem(&sysstash, &tid);
+    if (!v)
         return 0;
-    e->ret = ret;
-    e->flags = (__u32)flags;
-    if (upeer_sockaddr && ret >= 0) {
-        __u16 family = 0;
-        bpf_probe_read_user(&family, sizeof(family), upeer_sockaddr);
-        e->family = family;
-        if (family == AF_INET) {
-            struct sockaddr_in in = {};
-            if (bpf_probe_read_user(&in, sizeof(in), upeer_sockaddr) == 0) {
-                e->dport = in.sin_port;
-                zcopy(e->dip, &in.sin_addr.s_addr, 4);
-            }
-        }
-    }
-    bpf_ringbuf_submit(e, 0);
+    struct sstash s = *v;
+    bpf_map_delete_elem(&sysstash, &tid);
+    emit_sock(s, 0, ret);
+    return 0;
+}
+
+SEC("tracepoint/syscalls/sys_enter_accept")
+int tp_enter_accept(const struct trace_event_raw_sys_enter *ctx) {
+    stash_sock(ctx, 0);
+    return 0;
+}
+
+SEC("tracepoint/syscalls/sys_exit_accept")
+int tp_exit_accept(const struct trace_event_raw_sys_exit *ctx) {
+    long ret = BPF_CORE_READ(ctx, ret);
+    if (ret < 0)
+        return 0;
+    __u64 tid = bpf_get_current_pid_tgid();
+    struct sstash *v = bpf_map_lookup_elem(&sysstash, &tid);
+    if (!v)
+        return 0;
+    struct sstash s = *v;
+    bpf_map_delete_elem(&sysstash, &tid);
+    emit_sock(s, 1, ret);
+    return 0;
+}
+
+SEC("tracepoint/syscalls/sys_enter_accept4")
+int tp_enter_accept4(const struct trace_event_raw_sys_enter *ctx) {
+    stash_sock(ctx, 1);
+    return 0;
+}
+
+SEC("tracepoint/syscalls/sys_exit_accept4")
+int tp_exit_accept4(const struct trace_event_raw_sys_exit *ctx) {
+    long ret = BPF_CORE_READ(ctx, ret);
+    if (ret < 0)
+        return 0;
+    __u64 tid = bpf_get_current_pid_tgid();
+    struct sstash *v = bpf_map_lookup_elem(&sysstash, &tid);
+    if (!v)
+        return 0;
+    struct sstash s = *v;
+    bpf_map_delete_elem(&sysstash, &tid);
+    emit_sock(s, 1, ret);
     return 0;
 }
 

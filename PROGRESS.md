@@ -21,6 +21,12 @@ nothing is stubbed.
   the sensor hooks `path_openat` fentry/fexit instead - it is the one function
   every open variant calls, and `op->open_flag` there carries the full raw
   flags (`file->f_flags` at fexit already has O_CREAT/O_TRUNC/O_APPEND stripped).
+- fexit/`__sys_accept4_file` fails on GitHub's runner kernel ("unknown BTF
+  type" - static fn inlined away there); `raw_tracepoint/sys_enter` cannot be
+  opened for fast syscall tracepoints at all (`bpf_raw_tracepoint_open` fails
+  even as root here). connect/accept therefore ride
+  `tracepoint/syscalls/sys_{enter,exit}_{connect,accept,accept4}` with the
+  sockaddr pointer stashed at enter - uapi-stable and works on both kernels.
 - exec argv comes from an fentry/__x64_sys_execve{,at} argument stash joined
   at sched_process_exec (tracepoint confirms real execs only).
 - `sudo cargo test` fails on CI (rustup shim sees no default toolchain under
@@ -31,7 +37,7 @@ nothing is stubbed.
   `live capture ok: 4289 events, 16 alerts` - all 14 detections assert
   rule id + field needle on real syscall triggers.
 - `tools/bench.sh` -> `bench-out.txt`: idle cpu=0.13% rss=11.8 MB;
-  6x cc -O2 burst cpu=0.20% (targets were <2% / <1%).
+  6x cc -O2 burst cpu=0.27% (targets were <2% / <1%).
 - assets/: events/detection/stats/overhead/demo - real `vhs` recordings
   (.tape), GIF + PNG frames.
 - Fresh-clone verification: `gh repo clone` -> `cargo build` -> 3 s run

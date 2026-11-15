@@ -1,7 +1,5 @@
-$ sudo tools/bench.sh 15          # CachyOS 7.3.3-1-cachyos, 6 cores, release build
 == idle phase: 15s ==
-idle: cpu=0.13% rss=11792kB
+idle: cpu=0.13% rss=11780kB
 == compile burst: 6x cc -O2 over 3000-function TU, 15s ==
-burst: cpu=0.20% rss=11688kB
-# cpu = % of ONE core (utime+stime delta / wall), rss = VmRSS of the bpfsight process
-# target was <2% of all-CPU and <1% of RAM during load: measured 0.20% of one core
+burst: cpu=0.27% rss=11620kB
+peak RSS:

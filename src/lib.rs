@@ -79,9 +79,24 @@ fn load_and_attach() -> Result<aya::Ebpf, String> {
         p.load().map_err(|e| format!("{name} load: {e}"))?;
         p.attach(tp).map_err(|e| format!("{name} attach {tp}: {e}"))?;
     }
+    for (name, class, tp) in [
+        ("tp_enter_connect", "syscalls", "sys_enter_connect"),
+        ("tp_exit_connect", "syscalls", "sys_exit_connect"),
+        ("tp_enter_accept", "syscalls", "sys_enter_accept"),
+        ("tp_exit_accept", "syscalls", "sys_exit_accept"),
+        ("tp_enter_accept4", "syscalls", "sys_enter_accept4"),
+        ("tp_exit_accept4", "syscalls", "sys_exit_accept4"),
+    ] {
+        let p: &mut aya::programs::TracePoint = bpf
+            .program_mut(name)
+            .ok_or(format!("program {name} missing"))?
+            .try_into()
+            .map_err(|e| format!("{name}: {e}"))?;
+        p.load().map_err(|e| format!("{name} load: {e}"))?;
+        p.attach(class, tp)
+            .map_err(|e| format!("{name} attach {class}:{tp}: {e}"))?;
+    }
     for (name, target) in [
-        ("connect_exit", "__sys_connect"),
-        ("accept_exit", "__sys_accept4_file"),
         ("path_openat_exit", "path_openat"),
     ] {
         let p: &mut aya::programs::fexit::FExit = bpf
