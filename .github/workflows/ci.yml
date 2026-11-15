@@ -12,4 +12,4 @@ jobs:
       - name: unit tests
         run: cargo test --lib
       - name: live eBPF tests (root + BTF on GH runner)
-        run: sudo $(rustup which cargo) test -- --test-threads=1
+        run: sudo env PATH="$(dirname "$(rustup which cargo)"):$PATH" cargo test -- --test-threads=1
