@@ -8,3 +8,5 @@ bpf/vmlinux.h
 *.sqlite-wal
 *.jsonl
 assets/*.png.png
+bpf/*.tmp
+bpf/*.btf
