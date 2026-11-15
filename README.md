@@ -162,16 +162,34 @@ kernel for belt-and-braces CO-RE.
 
 ## Evidence
 
-- `assets/events.png` — 4-second live capture: 1195 events, 0 drops, exec rows
-  with pid/comm/path/argv from the JSONL sink.
-- `assets/detection.png` — live alerts: `revshell-devtcp`, two
-  `base64-decode-exec`, `recon-tools`, plus the shipped
-  `rules/metasploit.yml` matching the connect to 4444.
-- `assets/stats.png` / `assets/demo.png` — `stats` accounting and the full
-  demo (rules inventory → live run → stats).
-- `assets/overhead.png` — the `bench.sh` table above.
-- Every PNG has a `.tape` next to it (`vhs` recordings of real terminal runs)
-  plus GIF versions (`assets/*.gif`).
+![live capture](assets/events.png)
+
+*Live 4 s capture: 1163 events received (1165 submitted, ring-full: 0,
+sequence gap: 2); exec rows shown from the JSONL sink
+(`tools/show-events.py`).*
+
+![detections](assets/detection.png)
+
+*Live alerts as they match: `revshell-devtcp`, two `base64-decode-exec`,
+`recon-tools`, and the shipped `rules/metasploit.yml` matching the connect
+to 4444 (`tools/demo-connect.py`).*
+
+![stats](assets/stats.png)
+
+*`stats` accounting over a fresh one-run database: per-kind counts,
+ring-buffer drop check, and totals.*
+
+![overhead](assets/overhead.png)
+
+*`tools/bench.sh` table — the numbers from [Performance](#performance).*
+
+![demo](assets/demo.png)
+
+*Full demo: rule inventory → live run with inline alerts → stats summary.*
+
+Every PNG has a `.tape` next to it (`vhs` recordings of real terminal runs)
+plus GIF versions (`assets/*.gif`), so each shot is reproducible with one
+command.
 
 ## License
 
